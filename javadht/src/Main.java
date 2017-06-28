@@ -14,7 +14,7 @@ public class Main {
         // 获取当前计算机的逻辑处理器数量, 由于使用的是NIO, 因此线程数保持和处理器数量一致能最大限度利用CPU资源
         final int processorCount = Runtime.getRuntime().availableProcessors();
         
-        // 每个dht节点都需要一个唯一的id, 该id必须为20字节, 这里为17个字节, 下面的代码会随机加上另外3个字节
+        // 每个dht节点都需要一个唯一的id, 该id必须为20字节, 这里为19个字节, 下面的代码会随机加上另外1个字节
         final String id = "dgqjavaqq:541241544";
         
         // 这里表示从60000到60255这256个端口将会被监听, 也就是一共会创建256个dht节点, 修改节点数量时确保下面生成id的逻辑产生的id长度为20字节
