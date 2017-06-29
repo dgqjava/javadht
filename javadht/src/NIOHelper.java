@@ -21,6 +21,7 @@ import java.util.concurrent.Executors;
  *
  */
 public class NIOHelper {
+	private static volatile boolean started; // 是否已经启动选择器
 	private static final Selector SELECTOR; // 选择器, 全局共享, 线程安全
 	private static final ExecutorService EVENT_SELECTOR = Executors.newSingleThreadExecutor(); // 一个进行事件选择和派发的单线程池
 	
@@ -32,13 +33,6 @@ public class NIOHelper {
 		try {
 			// 创建一个默认的选择器
 			SELECTOR = Selector.open();
-			
-			// 开始事件的监听, 并将监听到的读写事件派发给读写线程去完成异步读写
-			EVENT_SELECTOR.execute(new Runnable() {
-				public void run() {
-					startSelect();
-				}
-			});
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
@@ -55,6 +49,9 @@ public class NIOHelper {
 	 */
     public void bind(final int port, final String id) {
     	try {
+    		if(started) {
+    			throw new RuntimeException("已经启动, 无法再绑定通道");
+    		}
 	    	worker.submit(new Callable<Boolean>() {
 				@Override
 				public Boolean call() throws Exception {
@@ -99,46 +96,57 @@ public class NIOHelper {
     }
     
     /**
-     * 开始选择事件并派发给对应的读写线程完成读写
+     * 开始选择事件并派发给对应的读写线程完成读写, 这个方法只能被调用一次, 并且所有通道的绑定操作必须在这个方法调用前完成
      */
-    private static void startSelect() {
-        for(;;) {
-            try {
-            	// 阻塞等待事件, 每隔10毫秒中断一次
-                if (SELECTOR.select(10) == 0) {
-                    continue;
-                }
+    public static void startSelect() {
+    	if(started) {
+    		throw new RuntimeException("已经启动选择器");
+    	}
+    	started = true;
+		
+		// 开始事件的监听, 并将监听到的读写事件派发给读写线程去完成异步读写
+		EVENT_SELECTOR.execute(new Runnable() {
+			public void run() {
+		    	
+		        for(;;) {
+		            try {
+		            	// 等待事件
+		                if (SELECTOR.select() == 0) {
+		                    continue;
+		                }
 
-                // 循环事件
-                Iterator<SelectionKey> it = SELECTOR.selectedKeys().iterator();
-                while (it.hasNext()) {
-                    final SelectionKey key = it.next(); // 获取选择键
-                    final NIOHelper helper = ((Attachment) key.attachment()).helper;
-                    
-                    // 如果有数据可读, 则派发给对应的线程去异步读取
-                    if (key.isReadable()) {
-                    	helper.worker.execute(new Runnable() {
-							public void run() {
-								helper.read(key);
-							}
-						});
-                    }
-                    
-                    // 如果有数据可写, 则派发给对应的线程去异步写入
-                    if (key.isWritable()) {
-                    	helper.worker.execute(new Runnable() {
-                    		public void run() {
-                    			helper.write(key);
-                    		}
-                    	});
-                    }
+		                // 循环事件
+		                Iterator<SelectionKey> it = SELECTOR.selectedKeys().iterator();
+		                while (it.hasNext()) {
+		                    final SelectionKey key = it.next(); // 获取选择键
+		                    final NIOHelper helper = ((Attachment) key.attachment()).helper;
+		                    
+		                    // 如果有数据可读, 则派发给对应的线程去异步读取
+		                    if (key.isReadable()) {
+		                    	helper.worker.execute(new Runnable() {
+									public void run() {
+										helper.read(key);
+									}
+								});
+		                    }
+		                    
+		                    // 如果有数据可写, 则派发给对应的线程去异步写入
+		                    if (key.isWritable()) {
+		                    	helper.worker.execute(new Runnable() {
+		                    		public void run() {
+		                    			helper.write(key);
+		                    		}
+		                    	});
+		                    }
 
-                    it.remove();
-                }
-            } catch (Exception e) {
-            	e.printStackTrace();
-            }
-        }
+		                    it.remove();
+		                }
+		            } catch (Exception e) {
+		            	e.printStackTrace();
+		            }
+		        }
+			}
+		});
     }
     
     /**

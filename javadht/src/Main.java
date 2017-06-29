@@ -36,6 +36,7 @@ public class Main {
         if(ids.size() != 0) {
             new DHTServer(ports, ids);
         }
+        NIOHelper.startSelect();
     }
 }
 
